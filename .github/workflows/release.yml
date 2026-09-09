@@ -1,0 +1,35 @@
+name: Publish release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify extension
+        run: npm run check
+      - name: Build store-ready ZIP
+        shell: bash
+        run: |
+          asset="Tibo-RESET-Alert-${GITHUB_REF_NAME}.zip"
+          cd extension
+          zip -r "../${asset}" .
+          cd ..
+          sha256sum "${asset}" > "${asset}.sha256"
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          asset="Tibo-RESET-Alert-${GITHUB_REF_NAME}.zip"
+          gh release create "${GITHUB_REF_NAME}" "${asset}" "${asset}.sha256" --title "Tibo RESET Alert ${GITHUB_REF_NAME}" --generate-notes
