@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tibo · 待确认提醒</title><link rel="stylesheet" href="ui.css"></head>
+<body class="alarm"><main>
+<header><span class="eyebrow">TIBO · 需要你留意</span><h1>有一条提醒</h1><p>查看原文后，点“已知晓”停止重复提醒。</p></header>
+<section id="statusCard" class="status alert-status"><div class="status-heading"><span id="statusDot" class="status-dot"></span><strong id="status">正在读取…</strong></div><p id="healthSummary"></p><p id="last"></p><p id="lastReset"></p><p id="coverage" class="warning"></p><p id="delivery" class="warning"></p><small id="metrics"></small></section>
+<div class="toggles"><label><input type="checkbox" id="paused">暂停监控与提醒</label><label><input type="checkbox" id="muted">静音</label></div>
+<div id="message" role="status"></div>
+<section><div class="section-title"><h2>待确认</h2><button id="ackall" class="primary">全部已知晓</button></div><div id="pending"></div></section>
+<footer>关闭窗口不会确认消息；未确认时会再次提醒。<br>“疑似”表示上下文不足，请以原文为准。</footer>
+</main><script type="module" src="ui.js"></script></body></html>

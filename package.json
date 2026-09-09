@@ -1,0 +1,9 @@
+{
+  "name": "tibo-reset-alert",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node scripts/check.mjs"
+  }
+}

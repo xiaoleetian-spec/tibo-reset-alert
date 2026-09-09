@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tibo RESET 提醒</title><link rel="stylesheet" href="ui.css"></head>
+<body><main>
+<header><span class="eyebrow">TIBO · CODEX</span><h1>RESET 提醒</h1><p>发现额度重置消息时，及时通知你。</p></header>
+
+<section id="onboarding" class="onboarding hidden" aria-labelledby="setupTitle">
+  <div class="section-title"><h2 id="setupTitle">首次使用，完成这 3 步</h2><span class="step-badge">约 1 分钟</span></div>
+  <ol><li>打开监控页面，确认 X 页面可以正常显示。</li><li>运行一次测试提醒，检查弹窗和声音。</li><li>保持浏览器运行，插件会自动检查。</li></ol>
+  <div class="controls compact"><button id="setupOpen">1. 打开监控页面</button><button id="setupTest">2. 测试提醒</button><button id="finishSetup" class="primary">3. 准备好了</button></div>
+</section>
+
+<section id="statusCard" class="status"><div class="status-heading"><span id="statusDot" class="status-dot"></span><strong id="status">正在读取状态…</strong></div><p id="healthSummary"></p><p id="last"></p><p id="lastReset"></p><p id="coverage" class="warning"></p><p id="delivery" class="warning"></p><small id="metrics"></small></section>
+<div class="controls main-actions"><button id="check" class="primary">立即检查</button><button id="openMonitor">打开监控页面</button></div>
+<div class="toggles"><label><input type="checkbox" id="paused">暂停监控</label><label><input type="checkbox" id="muted">静音</label></div>
+<div id="message" role="status" aria-live="polite"></div>
+
+<section><div class="section-title"><h2>待确认提醒</h2><button id="ackall">全部已知晓</button></div><div id="pending"></div></section>
+
+<details id="advanced" class="advanced"><summary>高级诊断与帮助</summary>
+  <div class="advanced-body">
+    <p class="notice">用于排查漏报或页面访问问题。日常使用无需查看这些数据。</p>
+    <div class="controls compact"><button id="test">测试强提醒</button><button id="source">打开帖子页</button><button id="sourceReplies">打开回复页</button><button id="exportDiagnostics">导出诊断</button><button id="privacy">隐私与权限</button></div>
+    <section><div class="section-title"><h2>过去 24 小时</h2></div><div id="metrics24h" class="metric-grid"></div></section>
+    <section><div class="section-title"><h2>监控来源</h2></div><div id="sources" class="source-grid"></div></section>
+    <details><summary>最近检查日志</summary><div id="checklog"></div></details>
+    <details><summary>最近记录与历史基线</summary><div id="history"></div></details>
+    <section class="feedback"><div class="section-title"><h2>记录漏报</h2></div><p class="notice">粘贴未提醒的 Tibo 原文链接。记录只保存在你的浏览器中，可随诊断文件交给开发者排查。</p><div class="feedback-row"><input id="missedUrl" type="url" aria-label="未提醒的 Tibo 原文链接" placeholder="https://x.com/thsottiaux/status/…"><button id="reportMissed">记录</button></div></section>
+  </div>
+</details>
+
+<footer>每 2 分钟自动检查 · 重要消息在确认前每分钟提醒<br>浏览器休眠或系统勿扰可能影响提醒送达。</footer>
+</main><script type="module" src="ui.js"></script></body></html>

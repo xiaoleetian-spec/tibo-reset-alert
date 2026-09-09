@@ -1,0 +1,42 @@
+name: 问题或漏报
+description: 报告安装、检查、误报或漏报问题
+title: "[问题] "
+labels: [bug]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 问题类型
+      options:
+        - 无法安装
+        - 无法检查
+        - 漏报
+        - 误报
+        - 提醒没有声音或弹窗
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 插件版本
+      placeholder: 例如 0.3.0
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: 浏览器
+      options:
+        - Microsoft Edge
+        - Google Chrome
+        - 其他 Chromium 浏览器
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: 发生了什么
+      description: 漏报时请附 Tibo 原文链接。不要粘贴密码、Cookie、令牌或包含个人信息的内容。
+    validations:
+      required: true
