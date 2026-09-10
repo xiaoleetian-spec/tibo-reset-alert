@@ -1,9 +1,11 @@
 import {summarizeChecks} from './core.js';
+import {buildResetCalendar,monthAt,moveMonth} from './calendar.js';
 const $=id=>document.getElementById(id);
 const send=(type,extra={})=>chrome.runtime.sendMessage({type,...extra});
 const when=t=>t?new Date(t).toLocaleString('zh-CN',{hour12:false}):'尚未成功';
 const extensionVersion=chrome.runtime.getManifest().version;
 let lastSignature='';
+let calendarCursor=monthAt();
 const percent=value=>value===null?'暂无':`${Math.round(value*100)}%`;
 const duration=ms=>ms===null?'暂无':ms<60_000?`${Math.round(ms/1000)} 秒`:ms<3_600_000?`${Math.round(ms/60_000)} 分钟`:`${(ms/3_600_000).toFixed(1)} 小时`;
 function resetDate(value){if(!value)return '尚未检测到';const parts=Object.fromEntries(new Intl.DateTimeFormat('en',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value)).map(p=>[p.type,p.value]));return `${parts.year}${parts.month}${parts.day}`;}
@@ -25,6 +27,17 @@ function renderSources(sources={}){
   }
 }
 function renderMetrics(state){const el=$('metrics24h');if(!el)return;el.replaceChildren();const m=summarizeChecks(state.checkStats||state.checkLog,Date.now()),cards=[['完整覆盖率',percent(m.fullCoverageRate)],['帖子成功率',percent(m.sourceRates.posts.rate)],['回复成功率',percent(m.sourceRates.replies.rate)],['P95 读取耗时',duration(m.p95DurationMs)],['最长完整覆盖盲区',duration(m.longestBlindMs)],['最近完整覆盖',m.lastFullCoverage?when(m.lastFullCoverage):'尚无']];for(const [label,value] of cards){const box=document.createElement('div');box.className='metric';const strong=document.createElement('strong');strong.textContent=value;const small=document.createElement('small');small.textContent=label;box.append(strong,small);el.append(box);}}
+function renderCalendar(state){
+  const el=$('resetCalendar');if(!el)return;const view=buildResetCalendar(state,calendarCursor,Date.now());el.replaceChildren();
+  $('calendarMonth').textContent=`${view.month} 月`;$('calendarYear').textContent=view.year;$('calendarSummary').textContent=view.confirmed||view.planned?`本月确认 ${view.confirmed} 次${view.planned?` · 预告 ${view.planned} 条`:''}`:'本月尚无记录';
+  for(const cell of view.cells){if(!cell){const gap=document.createElement('span');gap.className='calendar-gap';el.append(gap);continue;}
+    const target=cell.events.find(event=>event.url)?.url?document.createElement('a'):document.createElement('div');target.className=`calendar-day${cell.isToday?' today':''}${cell.isLatest?' latest':''}`;
+    if(target.tagName==='A'){target.href=cell.events.find(event=>event.url).url;target.target='_blank';target.rel='noopener noreferrer';}
+    const number=document.createElement('span');number.className='day-number';number.textContent=cell.day;target.append(number);
+    const marks=document.createElement('span');marks.className='day-marks';for(const event of cell.events){const mark=document.createElement('i');mark.className=`mark ${event.type}`;mark.textContent=event.type==='planned'?'预告':event.type==='banked'?'存':'↻';marks.append(mark);}target.append(marks);
+    if(cell.events.length)target.title=cell.events.map(event=>`${event.type==='planned'?'预告':event.type==='banked'?'存入型重置':'确认重置'}：${event.text||event.label||''}`).join('\n');el.append(target);
+  }
+}
 function renderLog(items=[]){
   const el=$('checklog');if(!el)return;el.replaceChildren();if(!items.length){const p=document.createElement('p');p.className='empty';p.textContent='完成第一次检查后显示';el.append(p);return;}
   const triggers={manual:'手动',alarm:'定时',install:'安装',startup:'启动',resume:'恢复'},outcomes={success:'全部正常',partial:'部分成功',failed:'失败',backoff:'退避跳过'};
@@ -38,7 +51,7 @@ async function refresh(){
     if($('healthSummary'))$('healthSummary').textContent=s.paused?'不会自动检查或发送提醒。':s.health.failures?'请打开监控页面，确认 X 可以正常访问。':stale?'长时间没有完成检查，请打开监控页面。':s.checkingSince?'正在读取 Tibo 的帖子和回复。':s.initialized?(partial?'可用来源仍会继续监控；你可以在高级诊断中查看原因。':'帖子和回复均在正常检查。'):'点击“立即检查”开始。';
     $('last').textContent=`上次成功检查：${when(s.health.lastSuccess)}`;renderLastReset(s.lastReset);$('coverage').textContent=s.health.failures?(s.health.error||''):'';
     const errors=[s.delivery.notification&&'桌面通知：'+s.delivery.notification,s.delivery.audio&&'提示音：'+s.delivery.audio,s.delivery.window&&'提醒窗口：'+s.delivery.window].filter(Boolean);$('delivery').textContent=errors.join('\n');$('metrics').textContent=`版本 ${extensionVersion} · 成功 ${s.metrics.successes} / 检查 ${s.metrics.attempts} 次 · 待确认 ${s.pending.length} 条`;
-    $('paused').checked=s.paused;$('muted').checked=s.muted;renderSources(s.sources);renderMetrics(s);const signature=JSON.stringify([s.pending,s.history,s.recent,s.checkLog,s.feedback]);if(signature!==lastSignature){list('pending',s.pending,true,'目前没有需要你确认的提醒');list('history',[...s.history,...s.recent],false,'首次成功读取后显示');renderLog(s.checkLog);lastSignature=signature;}$('ackall').disabled=!s.pending.length;
+    $('paused').checked=s.paused;$('muted').checked=s.muted;renderCalendar(s);renderSources(s.sources);renderMetrics(s);const signature=JSON.stringify([s.pending,s.history,s.recent,s.checkLog,s.feedback]);if(signature!==lastSignature){list('pending',s.pending,true,'目前没有需要你确认的提醒');list('history',[...s.history,...s.recent],false,'首次成功读取后显示');renderLog(s.checkLog);lastSignature=signature;}$('ackall').disabled=!s.pending.length;
   }catch(e){$('message').textContent='无法读取插件状态：'+e.message;}
 }
 async function act(type,extra={},button){if(button)button.disabled=true;$('message').textContent='';try{const r=await send(type,extra);if(!r?.ok&&!r?.paused)throw new Error(r?.error||'操作失败');await refresh();return r;}catch(e){$('message').textContent=e.message;return null;}finally{if(button)button.disabled=false;}}
@@ -50,4 +63,5 @@ async function finishOnboarding(){await chrome.storage.local.set({publicUi:{onbo
 if($('check'))$('check').onclick=()=>act('check',{},$('check'));if($('source'))$('source').onclick=()=>act('source',{key:'posts'},$('source'));if($('sourceReplies'))$('sourceReplies').onclick=()=>act('source',{key:'replies'},$('sourceReplies'));if($('test'))$('test').onclick=()=>act('test',{},$('test'));
 if($('exportDiagnostics'))$('exportDiagnostics').onclick=exportDiagnostics;if($('reportMissed'))$('reportMissed').onclick=reportMissed;
 if($('openMonitor'))$('openMonitor').onclick=()=>openMonitorPages($('openMonitor'));if($('setupOpen'))$('setupOpen').onclick=()=>openMonitorPages($('setupOpen'));if($('setupTest'))$('setupTest').onclick=()=>act('test',{},$('setupTest'));if($('finishSetup'))$('finishSetup').onclick=finishOnboarding;if($('privacy'))$('privacy').onclick=()=>chrome.tabs.create({url:chrome.runtime.getURL('privacy.html')});
+$('calendarPrev').onclick=()=>{calendarCursor=moveMonth(calendarCursor,-1);refresh();};$('calendarNext').onclick=()=>{calendarCursor=moveMonth(calendarCursor,1);refresh();};$('calendarToday').onclick=()=>{calendarCursor=monthAt();refresh();};
 $('paused').onchange=()=>act('pause',{value:$('paused').checked});$('muted').onchange=()=>act('mute',{value:$('muted').checked});$('ackall').onclick=()=>act('ack',{key:'*'});initOnboarding();refresh();setInterval(refresh,2000);

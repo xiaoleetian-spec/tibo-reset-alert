@@ -14,6 +14,13 @@
 <div class="toggles"><label><input type="checkbox" id="paused">暂停监控</label><label><input type="checkbox" id="muted">静音</label></div>
 <div id="message" role="status" aria-live="polite"></div>
 
+<section class="calendar-card" aria-labelledby="calendarTitle">
+  <div class="calendar-heading"><div><h2 id="calendarTitle"><span id="calendarMonth"></span> <small id="calendarYear"></small></h2><p id="calendarSummary"></p></div><div class="calendar-nav"><button id="calendarPrev" aria-label="上个月">‹</button><button id="calendarToday">本月</button><button id="calendarNext" aria-label="下个月">›</button></div></div>
+  <div class="calendar-weekdays" aria-hidden="true"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+  <div id="resetCalendar" class="calendar-grid"></div>
+  <div class="calendar-legend"><span><i class="mark reset">↻</i>确认重置</span><span><i class="mark banked">存</i>存入型重置</span><span><i class="mark planned">预告</i>Tibo 预告</span><span><i class="latest-swatch"></i>最近一次</span></div>
+</section>
+
 <section><div class="section-title"><h2>待确认提醒</h2><button id="ackall">全部已知晓</button></div><div id="pending"></div></section>
 
 <details id="advanced" class="advanced"><summary>高级诊断与帮助</summary>
