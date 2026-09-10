@@ -2,7 +2,7 @@ const ZONE='Asia/Shanghai';
 const parts=value=>Object.fromEntries(new Intl.DateTimeFormat('en',{timeZone:ZONE,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(value)).map(p=>[p.type,p.value]));
 const statusOf=entry=>entry?.status||entry?.match?.status||null;
 const dateOf=entry=>entry?.publishedAt||entry?.createdAt||null;
-const bankedText=/\bbanked?\s+resets?\b|\breset\s+credits?\b|存入型?重置|储存型?重置/i;
+const bankedText=/(?:\bbanked?\s+resets?\b|\breset\s+credits?\b)[\s\S]{0,220}\b(?:restor\w*|refund\w*|credit\w*|grant\w*|issued?|getting another|receiv\w* another|available)\b|(?:补发|返还|存入|储存)[\s\S]{0,30}(?:重置|额度)/i;
 
 export function monthAt(value=Date.now()){
   const p=parts(value);return {year:Number(p.year),month:Number(p.month)};
@@ -18,8 +18,9 @@ export function buildResetCalendar(state,cursor=monthAt(),now=Date.now()){
   for(const entry of [...(state?.history||[]),...(state?.recent||[])]){
     if(entry?.test||!dateOf(entry))continue;
     const status=statusOf(entry);
-    if(!['completed','planned'].includes(status))continue;
-    entries.set(String(entry.id||entry.url||dateOf(entry)),{...entry,status});
+    const banked=bankedText.test(`${entry.text||''} ${entry.label||''}`);
+    if(!['completed','planned'].includes(status)&&!banked)continue;
+    entries.set(String(entry.id||entry.url||dateOf(entry)),{...entry,status,banked});
   }
   if(state?.lastReset?.publishedAt){
     const key=String(state.lastReset.id||state.lastReset.url||state.lastReset.publishedAt);
@@ -27,7 +28,7 @@ export function buildResetCalendar(state,cursor=monthAt(),now=Date.now()){
   }
   const events=[...entries.values()].map(entry=>{
     const p=parts(dateOf(entry));
-    return {...entry,dateKey:`${p.year}-${p.month}-${p.day}`,type:entry.status==='planned'?'planned':bankedText.test(`${entry.text||''} ${entry.label||''}`)?'banked':'reset'};
+    return {...entry,dateKey:`${p.year}-${p.month}-${p.day}`,type:entry.status==='planned'?'planned':entry.banked||bankedText.test(`${entry.text||''} ${entry.label||''}`)?'banked':'reset'};
   });
   const confirmed=events.filter(event=>event.status==='completed').sort((a,b)=>Date.parse(dateOf(a))-Date.parse(dateOf(b)));
   const latestId=String(state?.lastReset?.id||confirmed.at(-1)?.id||'');
@@ -43,5 +44,5 @@ export function buildResetCalendar(state,cursor=monthAt(),now=Date.now()){
   }
   while(cells.length%7)cells.push(null);
   const visible=events.filter(event=>event.dateKey.startsWith(`${cursor.year}-${String(cursor.month).padStart(2,'0')}-`));
-  return {year:cursor.year,month:cursor.month,cells,confirmed:visible.filter(event=>event.status==='completed').length,planned:visible.filter(event=>event.status==='planned').length};
+  return {year:cursor.year,month:cursor.month,cells,confirmed:visible.filter(event=>event.type!=='planned').length,planned:visible.filter(event=>event.type==='planned').length};
 }
