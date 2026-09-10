@@ -3,25 +3,34 @@ import {
   INTERVAL_MS,recordSourceFailure,recordSourceSuccess,sourceIsReady,appendCheckLog,
   classifySourceError,ERROR_CODES,PARSER_VERSION,summarizeChecks
 } from './core.js';
+import {provisionMonitorWorkspace,revealMonitorWorkspace} from './workspace.js';
 
 const SOURCE_KEYS=Object.keys(SOURCE_DEFS),LOOKBACK_MS=86_400_000;
 const appVersion=()=>chrome.runtime.getManifest?.().version||'unknown';
 const runId=started=>`${started}-${crypto.randomUUID?.()||Math.random().toString(36).slice(2)}`;
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function bounded(promise,ms,label){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(label)),ms);})]);}finally{clearTimeout(timer);}}
-let mutations=Promise.resolve(),activeScan=null,creatingOffscreen=null;
+let mutations=Promise.resolve(),activeScan=null,creatingOffscreen=null,creatingMonitorWorkspace=null;
 const read=async()=>normalizeState((await chrome.storage.local.get('state')).state||initialState());
 function mutate(fn){const task=mutations.then(async()=>{const s=await read();const result=await fn(s);await chrome.storage.local.set({state:s});return result;});mutations=task.catch(()=>{});return task;}
 
 async function schedule(){if(!await chrome.alarms.get('check'))await chrome.alarms.create('check',{periodInMinutes:2});if(!await chrome.alarms.get('repeat'))await chrome.alarms.create('repeat',{periodInMinutes:1});}
 const sourceHasIssue=(source,now=Date.now())=>!!(source.error||(source.backoffUntil&&source.backoffUntil>now));
 async function badge(){const s=await read(),partial=SOURCE_KEYS.some(key=>sourceHasIssue(s.sources[key]));const text=s.paused?'停':s.health.failures?'!':s.pending.length?String(s.pending.length):partial?'半':s.initialized?'✓':'…';const color=s.health.failures?'#be3444':s.pending.length?'#b45f08':partial?'#ad6b24':'#216a64';await chrome.action.setBadgeText({text});await chrome.action.setBadgeBackgroundColor({color});}
+async function ensureMonitorWorkspace(){
+  if(!creatingMonitorWorkspace)creatingMonitorWorkspace=(async()=>{
+    const snapshot=await read(),workspace=await provisionMonitorWorkspace(chrome,SOURCE_DEFS,snapshot);
+    await mutate(s=>{s.monitorWindowId=workspace.windowId;s.sourceTabs={...workspace.tabs};s.monitorTabId=workspace.tabs.posts??null;});
+    return workspace;
+  })().finally(()=>creatingMonitorWorkspace=null);
+  return creatingMonitorWorkspace;
+}
 async function monitorTab(key){
   const def=SOURCE_DEFS[key];if(!def)throw new Error('未知监控来源');
-  const s=await read(),id=s.sourceTabs[key];
-  if(id!==null){try{let tab=await chrome.tabs.get(id);if((tab.url||'').replace(/\/$/,'')!==def.url)tab=await chrome.tabs.update(id,{url:def.url,active:false});return tab;}catch{}}
-  const tab=await chrome.tabs.create({url:def.url,active:false});await mutate(s=>{s.sourceTabs[key]=tab.id;if(key==='posts')s.monitorTabId=tab.id;});return tab;
+  const workspace=await ensureMonitorWorkspace(),id=workspace.tabs[key];
+  let tab=await chrome.tabs.get(id);if((tab.url||'').replace(/\/$/,'')!==def.url)tab=await chrome.tabs.update(id,{url:def.url,active:false});return tab;
 }
+async function showMonitorWorkspace(key='posts'){const workspace=await ensureMonitorWorkspace();await revealMonitorWorkspace(chrome,workspace,key);return workspace;}
 async function ensureAudio(){const contexts=await chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT']});if(contexts.length)return;if(!creatingOffscreen)creatingOffscreen=chrome.offscreen.createDocument({url:'offscreen.html',reasons:['AUDIO_PLAYBACK'],justification:'为用户请求的 RESET 强提醒播放短提示音'}).finally(()=>creatingOffscreen=null);await creatingOffscreen;}
 async function playSound(){await ensureAudio();const r=await bounded(chrome.runtime.sendMessage({type:'play-audio',target:'offscreen'}),5000,'提示音启动超时，请检查浏览器声音设置');if(!r?.ok)throw new Error(r?.error||'音频页面无响应');}
 async function showWindow(){const s=await read();if(s.alertWindowId!==null){try{await chrome.windows.get(s.alertWindowId);return;}catch{}}const w=await chrome.windows.create({url:chrome.runtime.getURL('alarm.html'),type:'popup',width:520,height:650,focused:true});await mutate(s=>{s.alertWindowId=w.id;});}
@@ -87,7 +96,7 @@ async function init(){
 chrome.runtime.onInstalled.addListener(()=>{init().then(()=>check('install')).catch(console.error);});
 chrome.runtime.onStartup.addListener(()=>{init().then(()=>check('startup')).catch(console.error);});
 chrome.alarms.onAlarm.addListener(alarm=>{(alarm.name==='check'?check('alarm'):alarm.name==='repeat'?repeat():Promise.resolve()).catch(console.error);});
-chrome.windows.onRemoved.addListener(id=>{mutate(s=>{if(s.alertWindowId===id)s.alertWindowId=null;}).catch(console.error);});
+chrome.windows.onRemoved.addListener(id=>{mutate(s=>{if(s.alertWindowId===id)s.alertWindowId=null;if(s.monitorWindowId===id){s.monitorWindowId=null;s.sourceTabs={posts:null,replies:null};s.monitorTabId=null;}}).catch(console.error);});
 chrome.notifications.onClicked.addListener(()=>{showWindow().catch(console.error);});
 chrome.notifications.onButtonClicked.addListener((id,index)=>{if(index===1)ack('*').catch(console.error);else showWindow().catch(console.error);});
 async function ack(key){await mutate(s=>acknowledge(s,key));if(!(await read()).pending.length)await chrome.notifications.clear('tibo-alert');await badge();}
@@ -110,7 +119,7 @@ async function recordFeedback(message){
 async function diagnostics(){const s=await read(),now=Date.now();return {ok:true,data:{schemaVersion:1,generatedAt:new Date(now).toISOString(),appVersion:appVersion(),parserVersion:PARSER_VERSION,health:s.health,sources:s.sources,lastReset:s.lastReset,metrics:s.metrics,metrics24h:summarizeChecks(s.checkStats,now),lastScan:s.lastScan||null,checkLog:s.checkLog,deliveryLog:s.deliveryLog,feedback:s.feedback}};}
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(message.target==='offscreen')return false;const allowed=['panel.html','alarm.html'].map(p=>chrome.runtime.getURL(p));if(sender.id!==chrome.runtime.id||!allowed.includes(sender.url?.split('?')[0]))return false;
-  const run=async()=>{switch(message.type){case 'state':return {ok:true,state:await read()};case 'check':return check('manual');case 'ack':await ack(message.key);return {ok:true};case 'pause':await mutate(s=>{s.paused=!!message.value;});await badge();if(!message.value)check('resume').catch(console.error);return {ok:true};case 'mute':await mutate(s=>{s.muted=!!message.value;});return {ok:true};case 'test':return testAlert();case 'feedback':return recordFeedback(message);case 'diagnostics':return diagnostics();case 'source':{const key=SOURCE_DEFS[message.key]?message.key:'posts',tab=await monitorTab(key);await chrome.tabs.update(tab.id,{active:true});return {ok:true};}case 'sourceAll':{const tabs=[];for(const key of SOURCE_KEYS)tabs.push(await monitorTab(key));if(tabs[0]?.id!==undefined)await chrome.tabs.update(tabs[0].id,{active:true});return {ok:true};}default:throw new Error('未知操作');}};
+  const run=async()=>{switch(message.type){case 'state':return {ok:true,state:await read()};case 'check':return check('manual');case 'ack':await ack(message.key);return {ok:true};case 'pause':await mutate(s=>{s.paused=!!message.value;});await badge();if(!message.value)check('resume').catch(console.error);return {ok:true};case 'mute':await mutate(s=>{s.muted=!!message.value;});return {ok:true};case 'test':return testAlert();case 'feedback':return recordFeedback(message);case 'diagnostics':return diagnostics();case 'source':{const key=SOURCE_DEFS[message.key]?message.key:'posts';await showMonitorWorkspace(key);return {ok:true};}case 'sourceAll':await showMonitorWorkspace('posts');return {ok:true};default:throw new Error('未知操作');}};
   run().then(sendResponse).catch(e=>sendResponse({ok:false,error:e.message}));return true;
 });
 init().catch(console.error);

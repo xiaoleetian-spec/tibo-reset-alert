@@ -47,7 +47,7 @@ export function classify(post) {
 export function initialState(now = Date.now()) {
   return {version:3, installedAt:now, initialized:false, baselineId:'0', seen:[], pending:[], history:[], recent:[], lastReset:null, paused:false, muted:false,
     health:{failures:0, lastSuccess:null, lastAttempt:null, error:null, incident:0, coverage:null},
-    metrics:{attempts:0, successes:0}, delivery:{notification:null, audio:null, window:null}, monitorTabId:null, alertWindowId:null,
+    metrics:{attempts:0, successes:0}, delivery:{notification:null, audio:null, window:null}, monitorTabId:null, monitorWindowId:null, alertWindowId:null,
     sources:{posts:initialSourceState(),replies:initialSourceState()},sourceTabs:{posts:null,replies:null},checkLog:[],checkStats:[],deliveryLog:[],feedback:[]};
 }
 
@@ -84,6 +84,7 @@ export function normalizeState(value,now=Date.now()) {
   if(!Object.hasOwn(state.sourceTabs,'replies'))state.sourceTabs.replies=null;
   state.alertWindowId ??= null;
   state.monitorTabId ??= null;
+  state.monitorWindowId ??= null;
   state.lastReset ??= null;
   return state;
 }
