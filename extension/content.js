@@ -31,7 +31,10 @@
       if (gathered.size===previous) stagnant++; else stagnant=0;
       previous=gathered.size;
       if(stagnant>=3 && gathered.size) break;
-      if(gathered.size) window.scrollBy(0,Math.max(700,innerHeight*0.85));
+      // The replies route can render only the profile header in a short or
+      // minimized viewport. Advance the page after two empty passes so X gets
+      // a chance to mount the lazy-loaded timeline below the fold.
+      if(gathered.size || pass>=2) window.scrollBy(0,Math.max(700,innerHeight*0.85));
       await delay(900);
     }
     if(!gathered.size) {
