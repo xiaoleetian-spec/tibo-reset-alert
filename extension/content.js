@@ -6,36 +6,44 @@
     if (sender.id !== chrome.runtime.id || message.type !== 'scan') return;
     if (scanning) { reply({ok:false,error:'上一次页面扫描尚未结束'}); return; }
     scanning=true;
-    scan(message.source,message.boundary).then(reply).catch(e=>reply({ok:false,error:e.message,code:errorCode(e.message)})).finally(()=>scanning=false);
+    scan(message.source,message.boundary,message.since).then(reply).catch(e=>reply({ok:false,error:e.message,code:errorCode(e.message)})).finally(()=>scanning=false);
     return true;
   });
-  async function scan(source,boundary) {
+  async function scan(source,boundary,sinceValue) {
     const key=source==='replies'?'replies':'posts';
     const label=key==='replies'?'回复':'帖子';
     const expected=key==='replies'?'/thsottiaux/with_replies':'/thsottiaux';
     const path=location.pathname.replace(/\/$/,'');
     if(path!==expected)throw new Error(`${label}监控页路径不正确，当前为 ${path||'/'}`);
-    const gathered=new Map();
-    let reached=false, stagnant=0, previous=0;
-    for(let pass=0;pass<18;pass++) {
+    const gathered=new Map(),since=Number(sinceValue)||null,backfill=Number.isFinite(since)&&since>0;
+    let reached=false,reachedSince=false,earliestObservedAt=null,stagnant=0,previous=0;
+    for(let pass=0;pass<(backfill?60:18);pass++) {
       const posts=TiboParser.parseDocument(document).filter(p=>p.author==='thsottiaux');
       for(const p of posts) gathered.set(p.id,p);
+      for(const p of posts){const at=Date.parse(p.publishedAt);if(Number.isFinite(at))earliestObservedAt=earliestObservedAt===null?at:Math.min(earliestObservedAt,at);}
+      if(backfill){
+        const older=[...gathered.values()].filter(p=>Date.parse(p.publishedAt)<=since);
+        // One old pinned post at the top does not prove that the intervening
+        // month was traversed. Require overlapping older rows before complete.
+        if(older.length>=2)reachedSince=true;
+      }
       // One old pinned post is not evidence that the intervening timeline was covered.
       const old = posts.filter(p=>boundary && BigInt(p.id)<=BigInt(boundary));
       if (boundary && (gathered.has(boundary) || old.length>=2)) {
         reached=true;
         // Read overlapping rows to catch posts arriving out of order.
-        if(gathered.size>=8 || pass>=4) break;
+        if(!backfill&&(gathered.size>=8 || pass>=4)) break;
       }
-      if (!boundary && gathered.size>=8) break;
+      if(backfill&&reachedSince&&pass>=4)break;
+      if (!boundary&&!backfill&&gathered.size>=8) break;
       if (gathered.size===previous) stagnant++; else stagnant=0;
       previous=gathered.size;
-      if(stagnant>=3 && gathered.size) break;
+      if(stagnant>=(backfill?6:3)&&gathered.size) break;
       // The replies route can render only the profile header in a short or
       // minimized viewport. Advance the page after two empty passes so X gets
       // a chance to mount the lazy-loaded timeline below the fold.
       if(gathered.size || pass>=2) window.scrollBy(0,Math.max(700,innerHeight*0.85));
-      await delay(900);
+      await delay(backfill?650:900);
     }
     if(!gathered.size) {
       const txt=document.body.innerText;
@@ -46,6 +54,6 @@
       throw new Error(`X 的${label}页没有显示可验证内容`);
     }
     window.scrollTo(0,0);
-    return {ok:true,posts:[...gathered.values()],reachedBoundary:reached,observedAt:Date.now()};
+    return {ok:true,posts:[...gathered.values()],reachedBoundary:reached,reachedSince,earliestObservedAt,observedAt:Date.now()};
   }
 })();

@@ -45,7 +45,7 @@ export function classify(post) {
 }
 
 export function initialState(now = Date.now()) {
-  return {version:3, installedAt:now, initialized:false, baselineId:'0', seen:[], pending:[], history:[], recent:[], lastReset:null, paused:false, muted:false,
+  return {version:3, installedAt:now, initialized:false, baselineId:'0', seen:[], pending:[], history:[], recent:[], calendarEvents:[], lastReset:null, paused:false, muted:false,
     health:{failures:0, lastSuccess:null, lastAttempt:null, error:null, incident:0, coverage:null},
     metrics:{attempts:0, successes:0}, delivery:{notification:null, audio:null, window:null}, monitorTabId:null, monitorWindowId:null, alertWindowId:null,
     sources:{posts:initialSourceState(),replies:initialSourceState()},sourceTabs:{posts:null,replies:null},checkLog:[],checkStats:[],deliveryLog:[],feedback:[]};
@@ -53,7 +53,7 @@ export function initialState(now = Date.now()) {
 
 export function initialSourceState(initialized=false,boundaryId='0') {
   return {initialized,boundaryId,failures:0,lastAttempt:null,lastSuccess:null,error:null,lastCount:0,reachedBoundary:null,
-    errorCode:null,retryable:null,backoffUntil:null,backoffLevel:0,backoffReason:null};
+    errorCode:null,retryable:null,backoffUntil:null,backoffLevel:0,backoffReason:null,calendarMonth:null,calendarEarliestAt:null,calendarReachedStart:false,calendarBackfilledAt:null,calendarBackfillNextAt:null};
 }
 
 export function normalizeState(value,now=Date.now()) {
@@ -63,6 +63,7 @@ export function normalizeState(value,now=Date.now()) {
   state.pending=Array.isArray(state.pending)?state.pending:[];
   state.history=Array.isArray(state.history)?state.history:[];
   state.recent=Array.isArray(state.recent)?state.recent:[];
+  state.calendarEvents=Array.isArray(state.calendarEvents)?state.calendarEvents:[];
   state.checkLog=Array.isArray(state.checkLog)?state.checkLog:[];
   state.checkStats=Array.isArray(state.checkStats)?state.checkStats:state.checkLog.slice();
   state.deliveryLog=Array.isArray(state.deliveryLog)?state.deliveryLog:[];
@@ -127,6 +128,14 @@ export function recordSourceSuccess(state,key,result,now=Date.now()) {
   source.initialized=true;source.lastAttempt=now;source.lastSuccess=now;source.error=null;source.errorCode=null;source.retryable=null;source.failures=0;
   source.lastCount=result.posts.length;source.reachedBoundary=!!result.reachedBoundary;
   source.backoffUntil=null;source.backoffLevel=0;source.backoffReason=null;
+  if(result.backfillMonth){
+    if(source.calendarMonth!==result.backfillMonth){source.calendarMonth=result.backfillMonth;source.calendarEarliestAt=null;source.calendarReachedStart=false;source.calendarBackfilledAt=null;source.calendarBackfillNextAt=null;}
+    const earliest=Number(result.earliestObservedAt)||null;
+    if(earliest)source.calendarEarliestAt=source.calendarEarliestAt?Math.min(source.calendarEarliestAt,earliest):earliest;
+    source.calendarReachedStart=!!result.reachedSince;
+    source.calendarBackfilledAt=result.reachedSince?now:null;
+    source.calendarBackfillNextAt=result.reachedSince?null:now+1_800_000;
+  }
   const newest=result.posts.reduce((value,post)=>BigInt(post.id)>BigInt(value)?post.id:value,source.boundaryId||'0');
   source.boundaryId=newest;
   return source;
@@ -171,6 +180,9 @@ export function ingest(state, posts, now = Date.now(), options = {}) {
   const seen = new Set(state.seen);
   const alerts = [];
   const classified=valid.map(p=>({post:p,match:classify(p)}));
+  const calendar=new Map((state.calendarEvents||[]).map(entry=>[String(entry.id),entry]));
+  for(const {post,match} of classified)if(match)calendar.set(String(post.id),{...post,...match,source:post.source||calendar.get(String(post.id))?.source||null});
+  state.calendarEvents=[...calendar.values()].sort((a,b)=>Date.parse(b.publishedAt)-Date.parse(a.publishedAt)).slice(0,500);
   for(const {post:p,match} of classified) {
     if(match?.status!=='completed') continue;
     if(!state.lastReset || Date.parse(p.publishedAt)>Date.parse(state.lastReset.publishedAt)) {

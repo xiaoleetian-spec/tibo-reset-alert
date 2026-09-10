@@ -1,7 +1,7 @@
 import {
   initialState,normalizeState,SOURCE_DEFS,ingest,recordFailure,recordSuccess,acknowledge,
   INTERVAL_MS,recordSourceFailure,recordSourceSuccess,sourceIsReady,appendCheckLog,
-  classifySourceError,ERROR_CODES,PARSER_VERSION,summarizeChecks
+  classifySourceError,ERROR_CODES,PARSER_VERSION,summarizeChecks,validPost
 } from './core.js';
 import {provisionMonitorWorkspace,revealMonitorWorkspace} from './workspace.js';
 
@@ -9,6 +9,10 @@ const SOURCE_KEYS=Object.keys(SOURCE_DEFS),LOOKBACK_MS=86_400_000;
 const appVersion=()=>chrome.runtime.getManifest?.().version||'unknown';
 const runId=started=>`${started}-${crypto.randomUUID?.()||Math.random().toString(36).slice(2)}`;
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
+function calendarWindow(now=Date.now()){
+  const p=Object.fromEntries(new Intl.DateTimeFormat('en',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit'}).formatToParts(new Date(now)).map(x=>[x.type,x.value]));
+  return {month:`${p.year}-${p.month}`,since:Date.UTC(Number(p.year),Number(p.month)-1,1)-28_800_000};
+}
 async function bounded(promise,ms,label){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(label)),ms);})]);}finally{clearTimeout(timer);}}
 let mutations=Promise.resolve(),activeScan=null,creatingOffscreen=null,creatingMonitorWorkspace=null;
 const read=async()=>normalizeState((await chrome.storage.local.get('state')).state||initialState());
@@ -47,14 +51,14 @@ async function notify(entry,{repeat=false}={}){
 async function scanSource(key,before,started){
   const source=before.sources[key];
   if(!sourceIsReady(before,key,started))return {key,status:'backoff',backoffUntil:source.backoffUntil,error:source.error,code:source.errorCode,retryable:source.retryable,boundaryBefore:source.boundaryId,boundaryAfter:source.boundaryId,durationMs:0,count:0};
-  const began=Date.now();
+  const began=Date.now(),calendar=calendarWindow(started),needsBackfill=source.calendarMonth!==calendar.month||(!source.calendarReachedStart&&(!source.calendarBackfillNextAt||source.calendarBackfillNextAt<=started));
   try{
     const tab=await monitorTab(key);await chrome.tabs.reload(tab.id);let result,lastError;
-    for(let i=0;i<49;i++){try{result=await bounded(chrome.tabs.sendMessage(tab.id,{type:'scan',source:key,boundary:source.initialized?source.boundaryId:null}),25_000,`${SOURCE_DEFS[key].label}页面扫描超时`);break;}catch(e){lastError=e;if(/扫描超时/.test(e.message))throw e;if(i<48)await delay(250);}}
+    for(let i=0;i<49;i++){try{result=await bounded(chrome.tabs.sendMessage(tab.id,{type:'scan',source:key,boundary:source.initialized?source.boundaryId:null,...(needsBackfill?{since:calendar.since}:{})}),needsBackfill?55_000:25_000,`${SOURCE_DEFS[key].label}页面扫描超时`);break;}catch(e){lastError=e;if(/扫描超时/.test(e.message))throw e;if(i<48)await delay(250);}}
     if(!result){const e=new Error(`${SOURCE_DEFS[key].label}监控页无法连接：${lastError?.message||'页面脚本未响应'}`);e.code=ERROR_CODES.NETWORK_BLOCKED;throw e;}
     if(!result.ok){const e=new Error(result.error||`${SOURCE_DEFS[key].label}页面没有返回可验证结果`);e.code=result.code;throw e;}
     if(!Array.isArray(result.posts)||!result.posts.length){const e=new Error(`${SOURCE_DEFS[key].label}页面没有返回可验证帖文`);e.code=ERROR_CODES.EMPTY_TIMELINE;throw e;}
-    return {key,status:'success',posts:result.posts.map(p=>({...p,source:key})),count:result.posts.length,reachedBoundary:!!result.reachedBoundary,boundaryBefore:source.boundaryId,boundaryAfter:source.boundaryId,durationMs:Date.now()-began};
+    return {key,status:'success',posts:result.posts.map(p=>({...p,source:key})),count:result.posts.length,reachedBoundary:!!result.reachedBoundary,boundaryBefore:source.boundaryId,boundaryAfter:source.boundaryId,durationMs:Date.now()-began,...(needsBackfill?{backfillMonth:calendar.month,reachedSince:!!result.reachedSince,earliestObservedAt:result.earliestObservedAt||null}:{})};
   }catch(e){const info=classifySourceError(e.message,e.code);return {key,status:'failed',error:e.message,code:info.code,retryable:info.retryable,boundaryBefore:source.boundaryId,boundaryAfter:source.boundaryId,durationMs:Date.now()-began,count:0};}
 }
 function sourceSummary(result,state){const label=SOURCE_DEFS[result.key].label;if(result.status==='success')return `${label}正常（${result.count} 条）${result.reachedBoundary?'':'，未抵达上次边界'}`;if(result.status==='backoff')return `${label}退避至 ${new Date(result.backoffUntil).toLocaleString('zh-CN',{hour12:false})}`;const source=state.sources[result.key],code=source.errorCode?`[${source.errorCode}] `:'';return source.backoffUntil?`${label}异常 ${code}退避至 ${new Date(source.backoffUntil).toLocaleString('zh-CN',{hour12:false})}`:`${label}异常：${code}${result.error}`;}
@@ -63,7 +67,7 @@ async function scan(trigger){
   const before=await read();if(before.paused)return {paused:true};const started=Date.now(),currentRunId=runId(started);await mutate(s=>{s.metrics.attempts++;s.health.lastAttempt=started;s.checkingSince=started;s.checkingRunId=currentRunId;});
   let finalResults=[];
   try{
-    const results=await Promise.all(SOURCE_KEYS.map(key=>scanSource(key,before,started)));let alerts=[];
+    const results=[];for(const key of SOURCE_KEYS){results.push(await scanSource(key,before,started));if(key!==SOURCE_KEYS.at(-1))await delay(500);}let alerts=[];
     const summary=await mutate(s=>{
       if(s.paused)return {paused:true,alerts:[],results};const working=[],failed=[],backoff=[];
       for(const result of results){
@@ -117,9 +121,24 @@ async function recordFeedback(message){
   if(message.kind==='false_positive'&&!(await read()).pending.length)await chrome.notifications.clear('tibo-alert');await badge();return {ok:true,feedback:saved};
 }
 async function diagnostics(){const s=await read(),now=Date.now();return {ok:true,data:{schemaVersion:1,generatedAt:new Date(now).toISOString(),appVersion:appVersion(),parserVersion:PARSER_VERSION,health:s.health,sources:s.sources,lastReset:s.lastReset,metrics:s.metrics,metrics24h:summarizeChecks(s.checkStats,now),lastScan:s.lastScan||null,checkLog:s.checkLog,deliveryLog:s.deliveryLog,feedback:s.feedback}};}
+async function exportBackup(){const s=await read();return {ok:true,data:{schemaVersion:1,kind:'tibo-reset-history-backup',exportedAt:new Date().toISOString(),appVersion:appVersion(),baselineId:s.baselineId,seen:s.seen,history:s.history,recent:s.recent,calendarEvents:s.calendarEvents,lastReset:s.lastReset}};}
+function validResetEntry(entry){return validPost(entry)&&String(entry.id).length<=30;}
+async function importBackup(message){
+  const backup=message.backup;if(!backup||backup.schemaVersion!==1||backup.kind!=='tibo-reset-history-backup')throw new Error('不是有效的 Tibo RESET 历史备份');
+  const valid=items=>(Array.isArray(items)?items:[]).filter(validResetEntry);let imported=0;
+  await mutate(s=>{
+    const incoming=[...new Map([...valid(backup.history),...valid(backup.recent),...valid(backup.calendarEvents)].map(entry=>[String(entry.id),entry])).values()],calendar=new Map((s.calendarEvents||[]).map(entry=>[String(entry.id),entry])),history=new Map(s.history.filter(entry=>entry?.kind!=='reset'||validPost(entry)).map(entry=>[entry.key||`${entry.kind}:${entry.id||entry.createdAt}`,entry]));
+    for(const entry of incoming){calendar.set(String(entry.id),entry);if(entry.kind==='reset')history.set(entry.key||`post:${entry.id}`,entry);}
+    s.calendarEvents=[...calendar.values()].sort((a,b)=>Date.parse(b.publishedAt)-Date.parse(a.publishedAt)).slice(0,500);s.history=[...history.values()].sort((a,b)=>Date.parse(b.publishedAt||b.createdAt)-Date.parse(a.publishedAt||a.createdAt)).slice(0,300);
+    const ids=new Set([...(s.seen||[]),...(Array.isArray(backup.seen)?backup.seen:[]),...incoming.map(entry=>entry.id)].filter(id=>/^\d{1,30}$/.test(String(id))).map(String));s.seen=[...ids];
+    const baseline=[s.baselineId,backup.baselineId,...ids].filter(id=>/^\d{1,30}$/.test(String(id))).reduce((a,b)=>BigInt(a)>BigInt(b)?a:b,'0');s.baselineId=baseline;s.initialized=s.initialized||ids.size>0;
+    const candidates=[s.lastReset,backup.lastReset,...incoming.filter(entry=>(entry.status||entry.match?.status)==='completed')].filter(validResetEntry).sort((a,b)=>Date.parse(a.publishedAt)-Date.parse(b.publishedAt));if(candidates.length)s.lastReset=candidates.at(-1);
+    imported=incoming.length;
+  });await badge();return {ok:true,imported};
+}
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(message.target==='offscreen')return false;const allowed=['panel.html','alarm.html'].map(p=>chrome.runtime.getURL(p));if(sender.id!==chrome.runtime.id||!allowed.includes(sender.url?.split('?')[0]))return false;
-  const run=async()=>{switch(message.type){case 'state':return {ok:true,state:await read()};case 'check':return check('manual');case 'ack':await ack(message.key);return {ok:true};case 'pause':await mutate(s=>{s.paused=!!message.value;});await badge();if(!message.value)check('resume').catch(console.error);return {ok:true};case 'mute':await mutate(s=>{s.muted=!!message.value;});return {ok:true};case 'test':return testAlert();case 'feedback':return recordFeedback(message);case 'diagnostics':return diagnostics();case 'source':{const key=SOURCE_DEFS[message.key]?message.key:'posts';await showMonitorWorkspace(key);return {ok:true};}case 'sourceAll':await showMonitorWorkspace('posts');return {ok:true};default:throw new Error('未知操作');}};
+  const run=async()=>{switch(message.type){case 'state':return {ok:true,state:await read()};case 'check':return check('manual');case 'ack':await ack(message.key);return {ok:true};case 'pause':await mutate(s=>{s.paused=!!message.value;});await badge();if(!message.value)check('resume').catch(console.error);return {ok:true};case 'mute':await mutate(s=>{s.muted=!!message.value;});return {ok:true};case 'test':return testAlert();case 'feedback':return recordFeedback(message);case 'diagnostics':return diagnostics();case 'exportBackup':return exportBackup();case 'importBackup':return importBackup(message);case 'source':{const key=SOURCE_DEFS[message.key]?message.key:'posts';await showMonitorWorkspace(key);return {ok:true};}case 'sourceAll':await showMonitorWorkspace('posts');return {ok:true};default:throw new Error('未知操作');}};
   run().then(sendResponse).catch(e=>sendResponse({ok:false,error:e.message}));return true;
 });
 init().catch(console.error);

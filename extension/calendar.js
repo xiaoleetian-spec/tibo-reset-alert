@@ -15,7 +15,7 @@ export function moveMonth(cursor,amount){
 
 export function buildResetCalendar(state,cursor=monthAt(),now=Date.now()){
   const entries=new Map();
-  for(const entry of [...(state?.history||[]),...(state?.recent||[])]){
+  for(const entry of [...(state?.calendarEvents||[]),...(state?.history||[]),...(state?.recent||[])]){
     if(entry?.test||!dateOf(entry))continue;
     const status=statusOf(entry);
     const banked=bankedText.test(`${entry.text||''} ${entry.label||''}`);
@@ -45,4 +45,11 @@ export function buildResetCalendar(state,cursor=monthAt(),now=Date.now()){
   while(cells.length%7)cells.push(null);
   const visible=events.filter(event=>event.dateKey.startsWith(`${cursor.year}-${String(cursor.month).padStart(2,'0')}-`));
   return {year:cursor.year,month:cursor.month,cells,confirmed:visible.filter(event=>event.type!=='planned').length,planned:visible.filter(event=>event.type==='planned').length};
+}
+
+export function calendarCoverage(state,cursor){
+  const month=`${cursor.year}-${String(cursor.month).padStart(2,'0')}`,sources=Object.values(state?.sources||{});
+  const current=sources.filter(source=>source.calendarMonth===month),complete=current.length>=2&&current.every(source=>source.calendarReachedStart);
+  const earliest=current.map(source=>Number(source.calendarEarliestAt)||null).filter(Boolean).sort((a,b)=>a-b).at(-1)||null;
+  return {month,complete,started:current.length>0,earliest};
 }

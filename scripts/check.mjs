@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const root='extension';
 const manifest=JSON.parse(readFileSync(`${root}/manifest.json`,'utf8'));
 assert.equal(manifest.manifest_version,3);
-assert.equal(manifest.version,'0.3.4');
+assert.equal(manifest.version,'0.3.5');
 assert.deepEqual(manifest.host_permissions,['https://x.com/*']);
 assert.deepEqual([...manifest.permissions].sort(),['alarms','notifications','offscreen','storage']);
 
@@ -24,5 +24,7 @@ for(const file of readdirSync(root).filter(file=>file.endsWith('.html'))) {
 const workspace=readFileSync(`${root}/workspace.js`,'utf8');
 assert.ok(workspace.includes("state:'minimized'"),'监控窗口应默认最小化');
 assert.ok(readFileSync(`${root}/panel.html`,'utf8').includes('id="resetCalendar"'),'缺少 RESET 日历');
+assert.ok(readFileSync(`${root}/panel.html`,'utf8').includes('id="exportBackup"'),'缺少历史备份导出入口');
+assert.ok(readFileSync(`${root}/panel.html`,'utf8').includes('id="importBackup"'),'缺少历史备份导入入口');
 assert.ok(workspace.includes('focused:false'),'监控窗口不应抢占焦点');
 console.log('PASS: manifest、权限、公开版文件、脚本语法和远程脚本检查');
