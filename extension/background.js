@@ -1,7 +1,7 @@
 import {
   initialState,normalizeState,SOURCE_DEFS,ingest,recordFailure,recordSuccess,acknowledge,
   INTERVAL_MS,recordSourceFailure,recordSourceSuccess,sourceIsReady,appendCheckLog,
-  classifySourceError,ERROR_CODES,PARSER_VERSION,summarizeChecks,validPost
+  classifySourceError,ERROR_CODES,PARSER_VERSION,summarizeChecks,validPost,shouldBackfillSource
 } from './core.js';
 import {provisionMonitorWorkspace,revealMonitorWorkspace} from './workspace.js';
 
@@ -48,10 +48,10 @@ async function notify(entry,{repeat=false}={}){
   const finished=Date.now();await mutate(s=>{s.delivery={...errors,lastAttempt:finished,repeat,muted:s.muted,severity,entryKey:entry.key};s.deliveryLog.unshift({id:`delivery:${finished}:${entry.key}`,entryKey:entry.key,severity,repeat,attemptedAt:finished,panelOnly:severity==='low',success:severity==='low'||Object.values(errors).every(x=>!x),errors});s.deliveryLog=s.deliveryLog.slice(0,100);});await badge();
 }
 
-async function scanSource(key,before,started){
+async function scanSource(key,before,started,forceBackfill=false){
   const source=before.sources[key];
   if(!sourceIsReady(before,key,started))return {key,status:'backoff',backoffUntil:source.backoffUntil,error:source.error,code:source.errorCode,retryable:source.retryable,boundaryBefore:source.boundaryId,boundaryAfter:source.boundaryId,durationMs:0,count:0};
-  const began=Date.now(),calendar=calendarWindow(started),needsBackfill=source.calendarMonth!==calendar.month||(!source.calendarReachedStart&&(!source.calendarBackfillNextAt||source.calendarBackfillNextAt<=started));
+  const began=Date.now(),calendar=calendarWindow(started),needsBackfill=shouldBackfillSource(source,calendar.month,started,forceBackfill);
   try{
     const tab=await monitorTab(key);await chrome.tabs.reload(tab.id);let result,lastError;
     for(let i=0;i<49;i++){try{result=await bounded(chrome.tabs.sendMessage(tab.id,{type:'scan',source:key,boundary:source.initialized?source.boundaryId:null,...(needsBackfill?{since:calendar.since}:{})}),needsBackfill?55_000:25_000,`${SOURCE_DEFS[key].label}页面扫描超时`);break;}catch(e){lastError=e;if(/扫描超时/.test(e.message))throw e;if(i<48)await delay(250);}}
@@ -67,7 +67,7 @@ async function scan(trigger){
   const before=await read();if(before.paused)return {paused:true};const started=Date.now(),currentRunId=runId(started);await mutate(s=>{s.metrics.attempts++;s.health.lastAttempt=started;s.checkingSince=started;s.checkingRunId=currentRunId;});
   let finalResults=[];
   try{
-    const results=[];for(const key of SOURCE_KEYS){results.push(await scanSource(key,before,started));if(key!==SOURCE_KEYS.at(-1))await delay(500);}let alerts=[];
+    const results=[];for(const key of SOURCE_KEYS){results.push(await scanSource(key,before,started,trigger==='manual'));if(key!==SOURCE_KEYS.at(-1))await delay(500);}let alerts=[];
     const summary=await mutate(s=>{
       if(s.paused)return {paused:true,alerts:[],results};const working=[],failed=[],backoff=[];
       for(const result of results){

@@ -56,6 +56,10 @@ export function initialSourceState(initialized=false,boundaryId='0') {
     errorCode:null,retryable:null,backoffUntil:null,backoffLevel:0,backoffReason:null,calendarMonth:null,calendarEarliestAt:null,calendarReachedStart:false,calendarBackfilledAt:null,calendarBackfillNextAt:null};
 }
 
+export function shouldBackfillSource(source,month,now=Date.now(),force=false){
+  return source.calendarMonth!==month||(!source.calendarReachedStart&&(force||!source.calendarBackfillNextAt||source.calendarBackfillNextAt<=now));
+}
+
 export function normalizeState(value,now=Date.now()) {
   const state=value && typeof value==='object'?value:initialState(now);
   state.version=3;
