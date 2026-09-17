@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const root='extension';
 const manifest=JSON.parse(readFileSync(`${root}/manifest.json`,'utf8'));
 assert.equal(manifest.manifest_version,3);
-assert.equal(manifest.version,'0.3.7');
+assert.equal(manifest.version,'0.3.8');
 assert.deepEqual(manifest.host_permissions,['https://x.com/*']);
 assert.deepEqual([...manifest.permissions].sort(),['alarms','notifications','offscreen','storage']);
 

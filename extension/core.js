@@ -16,6 +16,7 @@ const denial = /\b(?:not|never|no|won['’]?t|cannot|can['’]?t|isn['’]?t|are
 const delayed = /\b(?:delay(?:ed)?|postpon(?:e|ed)|later than|reschedul)\w*\b|推迟|延期/i;
 const planned = /\b(?:will|going to|plan(?:ning)?|tomorrow|soon|next|tonight|scheduled)\b|即将|明天|今晚|计划|将会|稍后/i;
 const completed = /\b(?:have|has|just|already|we['’]ve)\b[\s\S]{0,45}\breset|\ball\s+reset\b|\breset\b[\s\S]{0,30}\b(?:now|done|across all plans)\b|已(?:经)?[\s\S]{0,15}重置|重置完成/i;
+const propagatedCompletion = /\breset(?:s)?\b[\s\S]{0,30}\bpropagat(?:ed|ion)\b|\bpropagat(?:ed|ion)\b[\s\S]{0,30}\breset(?:s)?\b|(?:重置|额度)[\s\S]{0,15}(?:已全部下发|已全部生效|传播完成)/i;
 
 export function validPost(post) {
   if (!post || String(post.author).toLowerCase() !== ACCOUNT || !/^\d+$/.test(post.id)) return false;
@@ -34,14 +35,15 @@ export function classify(post) {
   const contextReset = resetWords.test(context);
   if (!ownReset && !(contextReset && /^(?:yes|yep|yeah|no|nope|tomorrow|today|tonight|soon|done|correct|absolutely|indeed|not yet|是的|明天|今天|稍后|还没|不会)[\s\S]{0,120}$/i.test(own.trim()))) return null;
   const hasCodex = codexWords.test(own + ' ' + context);
+  const propagationComplete = propagatedCompletion.test(own)&&!planned.test(own)&&!delayed.test(own);
   const clearlyOther = /\b(?:password|router|phone|factory|database|css|browser settings)\b|密码|路由器|恢复出厂/i.test(own);
   if (!hasCodex && clearlyOther) return null;
   let status = 'suspected';
-  if (hasCodex && ownReset) {
-    status = denial.test(own) ? 'denied' : delayed.test(own) ? 'delayed' : planned.test(own) ? 'planned' : completed.test(own) ? 'completed' : 'related';
+  if (ownReset) {
+    status = denial.test(own) ? 'denied' : hasCodex&&delayed.test(own) ? 'delayed' : hasCodex&&planned.test(own) ? 'planned' : (hasCodex&&completed.test(own))||propagationComplete ? 'completed' : hasCodex ? 'related' : 'suspected';
   }
   const labels = {suspected:'疑似 RESET 消息', denied:'重置否认 / 取消', delayed:'重置延期', planned:'重置预告', completed:'已重置', related:'重置相关'};
-  return { status, label: labels[status], reason: !ownReset ? '短回复关联到重置上下文，需查看原帖' : !hasCodex ? '本人提到 RESET，但缺少 Codex 上下文' : '本人正文提到重置，并有 Codex 上下文' };
+  return { status, label: labels[status], reason: !ownReset ? '短回复关联到重置上下文，需查看原帖' : propagationComplete ? '本人明确表示 RESET 已全部传播或下发生效' : !hasCodex ? '本人提到 RESET，但缺少 Codex 上下文' : '本人正文提到重置，并有 Codex 上下文' };
 }
 
 export function initialState(now = Date.now()) {
