@@ -16,8 +16,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Verify tag matches extension version
+        shell: bash
+        run: |
+          version="$(node -p "require('./extension/manifest.json').version")"
+          test "${GITHUB_REF_NAME}" = "v${version}"
       - name: Verify extension
-        run: npm run check
+        run: npm run verify
       - name: Build store-ready ZIP
         shell: bash
         run: |

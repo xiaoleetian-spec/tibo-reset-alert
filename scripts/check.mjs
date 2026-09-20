@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 
 const root='extension';
 const manifest=JSON.parse(readFileSync(`${root}/manifest.json`,'utf8'));
+const packageJson=JSON.parse(readFileSync('package.json','utf8'));
 assert.equal(manifest.manifest_version,3);
-assert.equal(manifest.version,'0.3.8');
+assert.equal(manifest.version,packageJson.version,'manifest 与 package 版本必须一致');
 assert.deepEqual(manifest.host_permissions,['https://x.com/*']);
 assert.deepEqual([...manifest.permissions].sort(),['alarms','notifications','offscreen','storage']);
 

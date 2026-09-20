@@ -1,10 +1,11 @@
 {
   "name": "tibo-reset-alert",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "private": true,
   "type": "module",
   "scripts": {
     "check": "node scripts/check.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "verify": "npm run check && npm test"
   }
 }
