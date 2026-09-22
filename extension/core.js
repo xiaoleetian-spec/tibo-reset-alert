@@ -14,7 +14,7 @@ const resetWords = /\breset(?:s|ting)?\b|重置|额度(?:恢复|刷新)|(?:usage
 const codexWords = /\bcodex\b|\bastra\b|代码助手/i;
 const denial = /\b(?:not|never|no|won['’]?t|cannot|can['’]?t|isn['’]?t|aren['’]?t|didn['’]?t|don['’]?t|doesn['’]?t)\b[\s\S]{0,55}\breset|\breset[\s\S]{0,35}\b(?:cancelled|canceled)\b|不(?:会|再|能|是|打算)?[\s\S]{0,12}重置|取消[\s\S]{0,12}重置/i;
 const delayed = /\b(?:delay(?:ed)?|postpon(?:e|ed)|later than|reschedul)\w*\b|推迟|延期/i;
-const planned = /\b(?:will|going to|plan(?:ning)?|tomorrow|soon|next|tonight|scheduled)\b|即将|明天|今晚|计划|将会|稍后/i;
+const planned = /\b(?:will|going to|promis(?:e|ed|ing)|plan(?:ned|ning)?|tomorrow|soon|next|tonight|scheduled|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|即将|明天|今晚|计划|承诺|将会|稍后/i;
 const completed = /\b(?:have|has|just|already|we['’]ve)\b[\s\S]{0,45}\breset|\ball\s+reset\b|\breset\b[\s\S]{0,30}\b(?:now|done|across all plans)\b|已(?:经)?[\s\S]{0,15}重置|重置完成/i;
 const propagatedCompletion = /\breset(?:s)?\b[\s\S]{0,30}\bpropagat(?:ed|ion)\b|\bpropagat(?:ed|ion)\b[\s\S]{0,30}\breset(?:s)?\b|(?:重置|额度)[\s\S]{0,15}(?:已全部下发|已全部生效|传播完成)/i;
 
@@ -40,10 +40,10 @@ export function classify(post) {
   if (!hasCodex && clearlyOther) return null;
   let status = 'suspected';
   if (ownReset) {
-    status = denial.test(own) ? 'denied' : hasCodex&&delayed.test(own) ? 'delayed' : hasCodex&&planned.test(own) ? 'planned' : (hasCodex&&completed.test(own))||propagationComplete ? 'completed' : hasCodex ? 'related' : 'suspected';
+    status = denial.test(own) ? 'denied' : delayed.test(own) ? 'delayed' : planned.test(own) ? 'planned' : (hasCodex&&completed.test(own))||propagationComplete ? 'completed' : hasCodex ? 'related' : 'suspected';
   }
   const labels = {suspected:'疑似 RESET 消息', denied:'重置否认 / 取消', delayed:'重置延期', planned:'重置预告', completed:'已重置', related:'重置相关'};
-  return { status, label: labels[status], reason: !ownReset ? '短回复关联到重置上下文，需查看原帖' : propagationComplete ? '本人明确表示 RESET 已全部传播或下发生效' : !hasCodex ? '本人提到 RESET，但缺少 Codex 上下文' : '本人正文提到重置，并有 Codex 上下文' };
+  return { status, label: labels[status], reason: !ownReset ? '短回复关联到重置上下文，需查看原帖' : propagationComplete ? '本人明确表示 RESET 已全部传播或下发生效' : status==='planned' ? '本人明确说明 RESET 的未来安排' : status==='delayed' ? '本人明确说明 RESET 延期' : !hasCodex ? '本人提到 RESET，但缺少 Codex 上下文' : '本人正文提到重置，并有 Codex 上下文' };
 }
 
 export function initialState(now = Date.now()) {
