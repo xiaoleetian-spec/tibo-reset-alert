@@ -33,7 +33,7 @@ test('公开后台行为门槛：双来源、去重、强提醒、部分成功�
       onMessage,onInstalled:event(),onStartup:event(),
       sendMessage:async message=>{audio.push(message);return {ok:true};}
     },
-    alarms:{get:async name=>alarms.get(name),create:async(name,value)=>alarms.set(name,value),onAlarm},
+    alarms:{get:async name=>alarms.get(name),create:async(name,value)=>alarms.set(name,value),clear:async name=>alarms.delete(name),onAlarm},
     action:{setBadgeText:async()=>{},setBadgeBackgroundColor:async()=>{}},
     tabs:{
       create:async options=>{const tab={id:++nextTab,url:options.url,windowId:options.windowId};tabs.set(tab.id,tab);return tab;},
@@ -76,6 +76,9 @@ test('公开后台行为门槛：双来源、去重、强提醒、部分成功�
     const handled=onMessage.listeners[0]({type,...extra},{id:chrome.runtime.id,url:chrome.runtime.getURL('panel.html')},resolve);
     assert.equal(handled,true);
   });
+  assert.equal(alarms.get('repeat').periodInMinutes,5,'默认应每 5 分钟重复重要提醒');
+  assert.equal((await ui('repeatInterval',{value:10})).ok,true);assert.equal(state.repeatIntervalMinutes,10);assert.equal(alarms.get('repeat').periodInMinutes,10,'修改后应立即重排定时器');
+  assert.equal((await ui('repeatInterval',{value:3})).ok,false);assert.equal(state.repeatIntervalMinutes,10,'非法间隔不能覆盖设置');
 
   let result=await ui('check');
   assert.equal(result.ok,true);assert.equal(result.partial,false);
@@ -108,4 +111,3 @@ test('公开后台行为门槛：双来源、去重、强提醒、部分成功�
   assert.equal(result.ok,false,'双来源空采集必须判为失败');
   assert.ok(result.sources.every(source=>source.status==='failed'&&source.code==='EMPTY_TIMELINE'));
 });
-

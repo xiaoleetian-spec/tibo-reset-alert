@@ -12,6 +12,7 @@
 <section id="statusCard" class="status"><div class="status-heading"><span id="statusDot" class="status-dot"></span><strong id="status">正在读取状态…</strong></div><p id="healthSummary"></p><p id="last"></p><p id="lastReset"></p><p id="coverage" class="warning"></p><p id="delivery" class="warning"></p><small id="metrics"></small></section>
 <div class="controls main-actions"><button id="check" class="primary">立即检查</button><button id="openMonitor">查看监控页面</button></div>
 <div class="toggles"><label><input type="checkbox" id="paused">暂停监控</label><label><input type="checkbox" id="muted">静音</label></div>
+<label class="repeat-setting" for="repeatInterval"><span>未确认的重要提醒</span><select id="repeatInterval" aria-label="未确认的重要提醒再次提醒间隔"><option value="1">每 1 分钟再次提醒</option><option value="5">每 5 分钟再次提醒</option><option value="10">每 10 分钟再次提醒</option><option value="15">每 15 分钟再次提醒</option><option value="30">每 30 分钟再次提醒</option><option value="60">每 60 分钟再次提醒</option></select></label>
 <div id="message" role="status" aria-live="polite"></div>
 
 <section class="calendar-card" aria-labelledby="calendarTitle">
@@ -35,5 +36,5 @@
   </div>
 </details>
 
-<footer>每 2 分钟自动检查 · 重要消息在确认前每分钟提醒<br>浏览器休眠或系统勿扰可能影响提醒送达。</footer>
+<footer>每 2 分钟自动检查 · <span id="repeatSummary">重要消息在确认前每 5 分钟提醒</span><br>浏览器休眠或系统勿扰可能影响提醒送达。</footer>
 </main><script type="module" src="ui.js"></script></body></html>

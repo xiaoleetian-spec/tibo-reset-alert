@@ -1,7 +1,8 @@
 import {
   initialState,normalizeState,SOURCE_DEFS,ingest,recordFailure,recordSuccess,acknowledge,
   INTERVAL_MS,recordSourceFailure,recordSourceSuccess,sourceIsReady,appendCheckLog,
-  classifySourceError,ERROR_CODES,PARSER_VERSION,summarizeChecks,validPost,shouldBackfillSource
+  classifySourceError,ERROR_CODES,PARSER_VERSION,summarizeChecks,validPost,shouldBackfillSource,
+  normalizeRepeatInterval,REPEAT_INTERVAL_OPTIONS
 } from './core.js';
 import {provisionMonitorWorkspace,revealMonitorWorkspace} from './workspace.js';
 
@@ -18,7 +19,11 @@ let mutations=Promise.resolve(),activeScan=null,creatingOffscreen=null,creatingM
 const read=async()=>normalizeState((await chrome.storage.local.get('state')).state||initialState());
 function mutate(fn){const task=mutations.then(async()=>{const s=await read();const result=await fn(s);await chrome.storage.local.set({state:s});return result;});mutations=task.catch(()=>{});return task;}
 
-async function schedule(){if(!await chrome.alarms.get('check'))await chrome.alarms.create('check',{periodInMinutes:2});if(!await chrome.alarms.get('repeat'))await chrome.alarms.create('repeat',{periodInMinutes:1});}
+async function schedule(){
+  if(!await chrome.alarms.get('check'))await chrome.alarms.create('check',{periodInMinutes:2});
+  const minutes=(await read()).repeatIntervalMinutes,current=await chrome.alarms.get('repeat');
+  if(!current||current.periodInMinutes!==minutes){if(current)await chrome.alarms.clear('repeat');await chrome.alarms.create('repeat',{periodInMinutes:minutes});}
+}
 const sourceHasIssue=(source,now=Date.now())=>!!(source.error||(source.backoffUntil&&source.backoffUntil>now));
 async function badge(){const s=await read(),partial=SOURCE_KEYS.some(key=>sourceHasIssue(s.sources[key]));const text=s.paused?'停':s.health.failures?'!':s.pending.length?String(s.pending.length):partial?'半':s.initialized?'✓':'…';const color=s.health.failures?'#be3444':s.pending.length?'#b45f08':partial?'#ad6b24':'#216a64';await chrome.action.setBadgeText({text});await chrome.action.setBadgeBackgroundColor({color});}
 async function ensureMonitorWorkspace(){
@@ -138,7 +143,7 @@ async function importBackup(message){
 }
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(message.target==='offscreen')return false;const allowed=['panel.html','alarm.html'].map(p=>chrome.runtime.getURL(p));if(sender.id!==chrome.runtime.id||!allowed.includes(sender.url?.split('?')[0]))return false;
-  const run=async()=>{switch(message.type){case 'state':return {ok:true,state:await read()};case 'check':return check('manual');case 'ack':await ack(message.key);return {ok:true};case 'pause':await mutate(s=>{s.paused=!!message.value;});await badge();if(!message.value)check('resume').catch(console.error);return {ok:true};case 'mute':await mutate(s=>{s.muted=!!message.value;});return {ok:true};case 'test':return testAlert();case 'feedback':return recordFeedback(message);case 'diagnostics':return diagnostics();case 'exportBackup':return exportBackup();case 'importBackup':return importBackup(message);case 'source':{const key=SOURCE_DEFS[message.key]?message.key:'posts';await showMonitorWorkspace(key);return {ok:true};}case 'sourceAll':await showMonitorWorkspace('posts');return {ok:true};default:throw new Error('未知操作');}};
+  const run=async()=>{switch(message.type){case 'state':return {ok:true,state:await read()};case 'check':return check('manual');case 'ack':await ack(message.key);return {ok:true};case 'pause':await mutate(s=>{s.paused=!!message.value;});await badge();if(!message.value)check('resume').catch(console.error);return {ok:true};case 'mute':await mutate(s=>{s.muted=!!message.value;});return {ok:true};case 'repeatInterval':{const value=Number(message.value);if(!REPEAT_INTERVAL_OPTIONS.includes(value))throw new Error('不支持的重复提醒间隔');await mutate(s=>{s.repeatIntervalMinutes=normalizeRepeatInterval(value);});await schedule();return {ok:true,value};}case 'test':return testAlert();case 'feedback':return recordFeedback(message);case 'diagnostics':return diagnostics();case 'exportBackup':return exportBackup();case 'importBackup':return importBackup(message);case 'source':{const key=SOURCE_DEFS[message.key]?message.key:'posts';await showMonitorWorkspace(key);return {ok:true};}case 'sourceAll':await showMonitorWorkspace('posts');return {ok:true};default:throw new Error('未知操作');}};
   run().then(sendResponse).catch(e=>sendResponse({ok:false,error:e.message}));return true;
 });
 init().catch(console.error);
