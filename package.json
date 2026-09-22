@@ -1,11 +1,12 @@
 {
   "name": "tibo-reset-alert",
-  "version": "0.3.10",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
     "check": "node scripts/check.mjs",
     "test": "node --test tests/*.test.mjs",
-    "verify": "npm run check && npm test"
+    "verify": "npm run check && npm test",
+    "cloud:dry-run": "node scripts/cloud-monitor.mjs --dry-run --fixture=tests/fixtures/cloud-timeline.json"
   }
 }

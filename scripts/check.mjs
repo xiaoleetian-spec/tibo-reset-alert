@@ -17,6 +17,16 @@ for(const file of readdirSync(root).filter(file=>file.endsWith('.js'))) {
   const result=spawnSync(process.execPath,['--check',`${root}/${file}`],{encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
 }
+for(const file of ['scripts/cloud-monitor.mjs','scripts/cloud-monitor-lib.mjs']) {
+  assert.ok(existsSync(file),`缺少文件：${file}`);
+  const result=spawnSync(process.execPath,['--check',file],{encoding:'utf8'});
+  assert.equal(result.status,0,result.stderr);
+}
+for(const file of ['.github/workflows/cloud-monitor.yml','docs/CLOUD_MONITOR.md','monitor-data/state.json','monitor-data/archive.jsonl','tests/fixtures/cloud-timeline.json'])assert.ok(existsSync(file),`缺少文件：${file}`);
+const cloudWorkflow=readFileSync('.github/workflows/cloud-monitor.yml','utf8');
+assert.ok(cloudWorkflow.includes('cron: "3/5 * * * *"'),'云端监控必须配置 5 分钟计划任务');
+assert.ok(cloudWorkflow.includes("vars.ENABLE_CLOUD_MONITOR == 'true'"),'真实计划任务必须受显式变量控制');
+assert.ok(cloudWorkflow.includes('X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}'),'X Token 必须来自 GitHub Secret');
 for(const file of readdirSync(root).filter(file=>file.endsWith('.html'))) {
   const html=readFileSync(`${root}/${file}`,'utf8');
   assert.ok(!/\son\w+\s*=/i.test(html),`${file} 不能包含内联事件脚本`);
