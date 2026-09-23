@@ -1,7 +1,7 @@
 export const ACCOUNT = 'thsottiaux';
 export const INTERVAL_MS = 120_000;
-export const REPEAT_INTERVAL_OPTIONS = Object.freeze([1,5,10,15,30,60]);
-export const DEFAULT_REPEAT_INTERVAL_MINUTES = 5;
+export const REPEAT_INTERVAL_OPTIONS = Object.freeze([1,2,5,10,15,30,60]);
+export const DEFAULT_REPEAT_INTERVAL_MINUTES = 1;
 export function normalizeRepeatInterval(value) {
   const minutes=Number(value);
   return REPEAT_INTERVAL_OPTIONS.includes(minutes)?minutes:DEFAULT_REPEAT_INTERVAL_MINUTES;
@@ -53,7 +53,7 @@ export function classify(post) {
 }
 
 export function initialState(now = Date.now()) {
-  return {version:3, installedAt:now, initialized:false, baselineId:'0', seen:[], pending:[], history:[], recent:[], calendarEvents:[], lastReset:null, paused:false, muted:false, repeatIntervalMinutes:DEFAULT_REPEAT_INTERVAL_MINUTES,
+  return {version:3, installedAt:now, initialized:false, baselineId:'0', seen:[], pending:[], history:[], recent:[], calendarEvents:[], lastReset:null, paused:false, muted:false, repeatIntervalMinutes:DEFAULT_REPEAT_INTERVAL_MINUTES, repeatIntervalUserSet:false,
     health:{failures:0, lastSuccess:null, lastAttempt:null, error:null, incident:0, coverage:null},
     metrics:{attempts:0, successes:0}, delivery:{notification:null, audio:null, window:null}, monitorTabId:null, monitorWindowId:null, alertWindowId:null,
     sources:{posts:initialSourceState(),replies:initialSourceState()},sourceTabs:{posts:null,replies:null},checkLog:[],checkStats:[],deliveryLog:[],feedback:[]};
@@ -71,7 +71,8 @@ export function shouldBackfillSource(source,month,now=Date.now(),force=false){
 export function normalizeState(value,now=Date.now()) {
   const state=value && typeof value==='object'?value:initialState(now);
   state.version=3;
-  state.repeatIntervalMinutes=normalizeRepeatInterval(state.repeatIntervalMinutes);
+  state.repeatIntervalUserSet=state.repeatIntervalUserSet===true;
+  state.repeatIntervalMinutes=state.repeatIntervalUserSet?normalizeRepeatInterval(state.repeatIntervalMinutes):DEFAULT_REPEAT_INTERVAL_MINUTES;
   state.seen=Array.isArray(state.seen)?state.seen:[];
   state.pending=Array.isArray(state.pending)?state.pending:[];
   state.history=Array.isArray(state.history)?state.history:[];

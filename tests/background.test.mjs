@@ -76,9 +76,9 @@ test('公开后台行为门槛：双来源、去重、强提醒、部分成功�
     const handled=onMessage.listeners[0]({type,...extra},{id:chrome.runtime.id,url:chrome.runtime.getURL('panel.html')},resolve);
     assert.equal(handled,true);
   });
-  assert.equal(alarms.get('repeat').periodInMinutes,5,'默认应每 5 分钟重复重要提醒');
-  assert.equal((await ui('repeatInterval',{value:10})).ok,true);assert.equal(state.repeatIntervalMinutes,10);assert.equal(alarms.get('repeat').periodInMinutes,10,'修改后应立即重排定时器');
-  assert.equal((await ui('repeatInterval',{value:3})).ok,false);assert.equal(state.repeatIntervalMinutes,10,'非法间隔不能覆盖设置');
+  assert.equal(alarms.get('repeat').periodInMinutes,1,'未设置时应沿用每分钟重复提醒');
+  assert.equal((await ui('repeatInterval',{value:2})).ok,true);assert.equal(state.repeatIntervalMinutes,2);assert.equal(state.repeatIntervalUserSet,true);assert.equal(alarms.get('repeat').periodInMinutes,2,'修改后应立即重排定时器');
+  assert.equal((await ui('repeatInterval',{value:3})).ok,false);assert.equal(state.repeatIntervalMinutes,2,'非法间隔不能覆盖设置');
 
   let result=await ui('check');
   assert.equal(result.ok,true);assert.equal(result.partial,false);
