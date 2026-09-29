@@ -13,6 +13,8 @@
 <div class="controls main-actions"><button id="check" class="primary">立即检查</button><button id="openMonitor">查看监控页面</button></div>
 <div class="toggles"><label><input type="checkbox" id="paused">暂停监控</label><label><input type="checkbox" id="muted">静音</label></div>
 <label class="repeat-setting" for="repeatInterval"><span>未确认的重要提醒</span><select id="repeatInterval" aria-label="未确认的重要提醒再次提醒间隔"><option value="1">每 1 分钟再次提醒</option><option value="2">每 2 分钟再次提醒</option><option value="5">每 5 分钟再次提醒</option><option value="10">每 10 分钟再次提醒</option><option value="15">每 15 分钟再次提醒</option><option value="30">每 30 分钟再次提醒</option><option value="60">每 60 分钟再次提醒</option></select></label>
+<label class="repeat-setting" for="repeatMax"><span>最长提醒时间</span><select id="repeatMax" aria-label="未确认的重要提醒最长重复时间"><option value="0">不限时，直到已知晓</option><option value="5">5 分钟</option><option value="10">10 分钟</option><option value="30">30 分钟</option></select></label>
+<p id="repeatLimitHint" class="notice repeat-note">从首次提醒开始计算；到时停止再次弹窗、发声和通知，消息仍保留在待确认列表。</p>
 <div id="message" role="status" aria-live="polite"></div>
 
 <section class="calendar-card" aria-labelledby="calendarTitle">

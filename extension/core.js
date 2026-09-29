@@ -2,9 +2,20 @@ export const ACCOUNT = 'thsottiaux';
 export const INTERVAL_MS = 120_000;
 export const REPEAT_INTERVAL_OPTIONS = Object.freeze([1,2,5,10,15,30,60]);
 export const DEFAULT_REPEAT_INTERVAL_MINUTES = 1;
+export const REPEAT_MAX_OPTIONS = Object.freeze([0,5,10,30]);
+export const DEFAULT_REPEAT_MAX_MINUTES = 0;
 export function normalizeRepeatInterval(value) {
   const minutes=Number(value);
   return REPEAT_INTERVAL_OPTIONS.includes(minutes)?minutes:DEFAULT_REPEAT_INTERVAL_MINUTES;
+}
+export function normalizeRepeatMax(value) {
+  const minutes=Number(value);
+  return REPEAT_MAX_OPTIONS.includes(minutes)?minutes:DEFAULT_REPEAT_MAX_MINUTES;
+}
+export function mayRepeat(entry,maxMinutes,now=Date.now()) {
+  if(!maxMinutes)return true;
+  const started=entry?.firstRemindedAt==null?Number(entry?.createdAt):Number(entry.firstRemindedAt);
+  return Number.isFinite(started)&&now-started<maxMinutes*60_000;
 }
 export const SOURCE_DEFS = Object.freeze({
   posts:Object.freeze({label:'帖子',url:'https://x.com/thsottiaux'}),
@@ -53,7 +64,7 @@ export function classify(post) {
 }
 
 export function initialState(now = Date.now()) {
-  return {version:3, installedAt:now, initialized:false, baselineId:'0', seen:[], pending:[], history:[], recent:[], calendarEvents:[], lastReset:null, paused:false, muted:false, repeatIntervalMinutes:DEFAULT_REPEAT_INTERVAL_MINUTES, repeatIntervalUserSet:false,
+  return {version:3, installedAt:now, initialized:false, baselineId:'0', seen:[], pending:[], history:[], recent:[], calendarEvents:[], lastReset:null, paused:false, muted:false, repeatIntervalMinutes:DEFAULT_REPEAT_INTERVAL_MINUTES, repeatIntervalUserSet:false, repeatMaxMinutes:DEFAULT_REPEAT_MAX_MINUTES,
     health:{failures:0, lastSuccess:null, lastAttempt:null, error:null, incident:0, coverage:null},
     metrics:{attempts:0, successes:0}, delivery:{notification:null, audio:null, window:null}, monitorTabId:null, monitorWindowId:null, alertWindowId:null,
     sources:{posts:initialSourceState(),replies:initialSourceState()},sourceTabs:{posts:null,replies:null},checkLog:[],checkStats:[],deliveryLog:[],feedback:[]};
@@ -73,8 +84,10 @@ export function normalizeState(value,now=Date.now()) {
   state.version=3;
   state.repeatIntervalUserSet=state.repeatIntervalUserSet===true;
   state.repeatIntervalMinutes=state.repeatIntervalUserSet?normalizeRepeatInterval(state.repeatIntervalMinutes):DEFAULT_REPEAT_INTERVAL_MINUTES;
+  state.repeatMaxMinutes=normalizeRepeatMax(state.repeatMaxMinutes);
   state.seen=Array.isArray(state.seen)?state.seen:[];
   state.pending=Array.isArray(state.pending)?state.pending:[];
+  for(const entry of state.pending)if(entry?.createdAt==null||!Number.isFinite(Number(entry.createdAt)))entry.createdAt=now;
   state.history=Array.isArray(state.history)?state.history:[];
   state.recent=Array.isArray(state.recent)?state.recent:[];
   state.calendarEvents=Array.isArray(state.calendarEvents)?state.calendarEvents:[];

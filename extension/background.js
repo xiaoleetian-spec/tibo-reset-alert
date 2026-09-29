@@ -2,7 +2,7 @@ import {
   initialState,normalizeState,SOURCE_DEFS,ingest,recordFailure,recordSuccess,acknowledge,
   INTERVAL_MS,recordSourceFailure,recordSourceSuccess,sourceIsReady,appendCheckLog,
   classifySourceError,ERROR_CODES,PARSER_VERSION,summarizeChecks,validPost,shouldBackfillSource,
-  normalizeRepeatInterval,REPEAT_INTERVAL_OPTIONS
+  normalizeRepeatInterval,REPEAT_INTERVAL_OPTIONS,normalizeRepeatMax,REPEAT_MAX_OPTIONS,mayRepeat
 } from './core.js';
 import {provisionMonitorWorkspace,revealMonitorWorkspace} from './workspace.js';
 
@@ -45,6 +45,7 @@ async function playSound(){await ensureAudio();const r=await bounded(chrome.runt
 async function showWindow(){const s=await read();if(s.alertWindowId!==null){try{await chrome.windows.get(s.alertWindowId);return;}catch{}}const w=await chrome.windows.create({url:chrome.runtime.getURL('alarm.html'),type:'popup',width:520,height:650,focused:true});await mutate(s=>{s.alertWindowId=w.id;});}
 async function notify(entry,{repeat=false}={}){
   const s=await read();if(s.paused)return;const severity=entry.test||entry.kind==='fault'?'critical':entry.kind==='recovery'?'medium':entry.severity||'critical';
+  if(!repeat)await mutate(state=>{const pending=state.pending.find(item=>item.key===entry.key);if(pending&&!pending.firstRemindedAt)pending.firstRemindedAt=Date.now();});
   const errors={notification:null,audio:null,window:null},id=entry.kind==='recovery'?'tibo-recovery':'tibo-alert';
   if(severity!=='low'){
     try{const permission=await chrome.notifications.getPermissionLevel();if(permission!=='granted')throw new Error('浏览器通知权限未启用');await chrome.notifications.clear(id);await chrome.notifications.create(id,{type:'basic',iconUrl:'icon.png',title:`${entry.test?'【测试】':''}${entry.label}`,message:entry.text.slice(0,220),requireInteraction:severity==='critical',silent:true,buttons:entry.kind==='recovery'?[]:[{title:'查看提醒'},{title:'全部已知晓'}]});}catch(e){errors.notification=e.message;}
@@ -97,7 +98,7 @@ async function scan(trigger){
     return {ok:false,backoff:summary.outcome==='backoff',error:summary.coverage,sources:finalResults};
   }finally{await mutate(s=>{if(s.checkingRunId===currentRunId){s.checkingSince=null;s.checkingRunId=null;}});await badge();}
 }
-async function repeat(){const s=await read();if(s.paused)return;const entry=[...s.pending].reverse().find(x=>x.test||x.kind==='fault'||!x.severity||x.severity==='critical');if(entry)await notify(entry,{repeat:true});await badge();}
+async function repeat(){const s=await read();if(s.paused)return;const now=Date.now(),entry=[...s.pending].reverse().find(x=>(x.test||x.kind==='fault'||!x.severity||x.severity==='critical')&&mayRepeat(x,s.repeatMaxMinutes,now));if(entry)await notify(entry,{repeat:true});await badge();}
 async function init(){
   let alerts=[];await mutate(s=>{const currentVersion=appVersion();if(currentVersion&&s.appVersion!==currentVersion){s.appVersion=currentVersion;s.checkingSince=null;s.checkingRunId=null;s.health={...s.health,failures:0,error:null,coverage:null};}if(s.checkingSince&&Date.now()-s.checkingSince>90_000){s.checkingSince=null;s.checkingRunId=null;if(!s.paused)alerts=recordFailure(s,'上次读取被中断，尚未取得完整结果');}});
   await schedule();await badge();for(const alert of alerts)await notify(alert);
@@ -143,7 +144,7 @@ async function importBackup(message){
 }
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(message.target==='offscreen')return false;const allowed=['panel.html','alarm.html'].map(p=>chrome.runtime.getURL(p));if(sender.id!==chrome.runtime.id||!allowed.includes(sender.url?.split('?')[0]))return false;
-  const run=async()=>{switch(message.type){case 'state':return {ok:true,state:await read()};case 'check':return check('manual');case 'ack':await ack(message.key);return {ok:true};case 'pause':await mutate(s=>{s.paused=!!message.value;});await badge();if(!message.value)check('resume').catch(console.error);return {ok:true};case 'mute':await mutate(s=>{s.muted=!!message.value;});return {ok:true};case 'repeatInterval':{const value=Number(message.value);if(!REPEAT_INTERVAL_OPTIONS.includes(value))throw new Error('不支持的重复提醒间隔');await mutate(s=>{s.repeatIntervalMinutes=normalizeRepeatInterval(value);s.repeatIntervalUserSet=true;});await schedule();return {ok:true,value};}case 'test':return testAlert();case 'feedback':return recordFeedback(message);case 'diagnostics':return diagnostics();case 'exportBackup':return exportBackup();case 'importBackup':return importBackup(message);case 'source':{const key=SOURCE_DEFS[message.key]?message.key:'posts';await showMonitorWorkspace(key);return {ok:true};}case 'sourceAll':await showMonitorWorkspace('posts');return {ok:true};default:throw new Error('未知操作');}};
+  const run=async()=>{switch(message.type){case 'state':return {ok:true,state:await read()};case 'check':return check('manual');case 'ack':await ack(message.key);return {ok:true};case 'pause':await mutate(s=>{s.paused=!!message.value;});await badge();if(!message.value)check('resume').catch(console.error);return {ok:true};case 'mute':await mutate(s=>{s.muted=!!message.value;});return {ok:true};case 'repeatInterval':{const value=Number(message.value);if(!REPEAT_INTERVAL_OPTIONS.includes(value))throw new Error('不支持的重复提醒间隔');await mutate(s=>{s.repeatIntervalMinutes=normalizeRepeatInterval(value);s.repeatIntervalUserSet=true;});await schedule();return {ok:true,value};}case 'repeatMax':{const value=Number(message.value);if(!REPEAT_MAX_OPTIONS.includes(value))throw new Error('不支持的最长提醒时间');await mutate(s=>{s.repeatMaxMinutes=normalizeRepeatMax(value);});return {ok:true,value};}case 'test':return testAlert();case 'feedback':return recordFeedback(message);case 'diagnostics':return diagnostics();case 'exportBackup':return exportBackup();case 'importBackup':return importBackup(message);case 'source':{const key=SOURCE_DEFS[message.key]?message.key:'posts';await showMonitorWorkspace(key);return {ok:true};}case 'sourceAll':await showMonitorWorkspace('posts');return {ok:true};default:throw new Error('未知操作');}};
   run().then(sendResponse).catch(e=>sendResponse({ok:false,error:e.message}));return true;
 });
 init().catch(console.error);

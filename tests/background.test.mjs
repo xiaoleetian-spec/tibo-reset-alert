@@ -9,7 +9,7 @@ const post=(id,text,publishedAt='2026-09-08T06:00:00.000Z',context='')=>({
 });
 
 test('公开后台行为门槛：双来源、去重、强提醒、部分成功、退避、确认与空采集',async t=>{
-  const RealDate=globalThis.Date,fixedNow=RealDate.parse('2026-09-08T07:00:00.000Z');
+  const RealDate=globalThis.Date;let fixedNow=RealDate.parse('2026-09-08T07:00:00.000Z');
   class FrozenDate extends RealDate {
     constructor(...args){super(...(args.length?args:[fixedNow]));}
     static now(){return fixedNow;}
@@ -95,6 +95,19 @@ test('公开后台行为门槛：双来源、去重、强提醒、部分成功�
   assert.equal(result.ok,true);assert.equal(state.pending.length,1);assert.equal(state.pending[0].severity,'critical');
   assert.equal(notifications.length,notificationCount+1);assert.equal(audio.length,audioCount+1);
   assert.equal(windowCreates.filter(options=>options.type==='popup').length,popupCount+1);
+  assert.equal(state.pending[0].firstRemindedAt,fixedNow,'初次强提醒必须记录可恢复的起始时间');
+
+  assert.equal((await ui('repeatMax',{value:5})).ok,true);assert.equal(state.repeatMaxMinutes,5);
+  assert.equal((await ui('repeatMax',{value:7})).ok,false);assert.equal(state.repeatMaxMinutes,5,'非法上限不能覆盖设置');
+  fixedNow+=2*60_000;
+  onAlarm.fire({name:'repeat'});await sleep(30);
+  const beforeExpiry=notifications.length;
+  assert.equal(beforeExpiry,notificationCount+2,'上限内仍应再次提醒');
+  fixedNow+=3*60_000;
+  onAlarm.fire({name:'repeat'});await sleep(30);
+  assert.equal(notifications.length,beforeExpiry,'到达 5 分钟上限后不得再通知');
+  assert.equal(audio.length,audioCount+2,'到达上限后不得再发声');
+  assert.equal(state.pending.length,1,'到期只停止重复提醒，待确认记录应保留');
 
   await ui('ack',{key:'*'});const afterAck=notifications.length;
   onAlarm.fire({name:'repeat'});await sleep(30);assert.equal(notifications.length,afterAck,'确认后不得重复提醒');

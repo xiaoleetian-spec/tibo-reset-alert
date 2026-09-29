@@ -1,5 +1,28 @@
 const CJK=/[\u3400-\u9fff]/;
 const LATIN_WORD=/\b[A-Za-z][A-Za-z'’.-]{1,}\b/g;
+const CODEX_WORD=/\bcodex\b/gi;
+
+async function translatePreservingCodex(session,text){
+  const brands=[];
+  const protectedText=text.replace(CODEX_WORD,word=>{
+    const token=`QXJZ${brands.length}ZJXQ`;
+    brands.push({token,word});
+    return token;
+  });
+  const translated=String(await session.translate(protectedText)).trim();
+  if(!brands.length)return translated;
+  if(brands.every(({token})=>translated.split(token).length===2)){
+    return brands.reduce((result,{token,word})=>result.replace(token,word),translated);
+  }
+  // Some local translators rewrite placeholders. Translate the surrounding text
+  // separately so the original product name never reaches the translator.
+  const parts=text.split(/(\bcodex\b)/gi),result=[];
+  for(const part of parts){
+    if(!part.trim())continue;
+    result.push(/^codex$/i.test(part)?part:String(await session.translate(part)).trim());
+  }
+  return result.join(' ').trim();
+}
 
 export function needsChineseTranslation(text){
   return typeof text==='string'&&!CJK.test(text)&&(text.match(LATIN_WORD)||[]).length>=3;
@@ -25,7 +48,7 @@ export async function translateEntryText(entry,translatorApi=globalThis.Translat
     if(availability==='unavailable')return {kind:'hint',text:chineseHint(entry)};
     const session=await translatorApi.create(options);
     try{
-      const translated=String(await session.translate(entry.text)).trim();
+      const translated=await translatePreservingCodex(session,entry.text);
       if(!translated||translated===entry.text)return {kind:'hint',text:chineseHint(entry)};
       return {kind:'translation',text:translated};
     }finally{session.destroy?.();}
